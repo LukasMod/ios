@@ -343,6 +343,13 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
+    - name: Native Fingerprint
+      id: fingerprint-second
+      run: |
+        npx rock fingerprint -p ios --raw
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
     - name: Find Build Artifact
       if: ${{ !env.ARTIFACT_URL }}
       run: |
