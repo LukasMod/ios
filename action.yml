@@ -190,8 +190,11 @@ runs:
         ARTIFACT_TRAITS="${{ inputs.destination }},${{ inputs.configuration }},${{ github.event.pull_request.number}}"
         echo "ARTIFACT_TRAITS=$ARTIFACT_TRAITS" >> $GITHUB_ENV
 
-        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json 2>&1) || (echo "$OUTPUT" && exit 1)
         if [ "$OUTPUT" ]; then
+          echo "=== RAW ROCK LIST OUTPUT (PR-related) ==="
+          echo "$OUTPUT"
+          echo "=== END RAW OUTPUT ==="
           echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
           echo "ARTIFACT_ID=$(echo "$OUTPUT" | jq -r '.id')" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=$(echo "$OUTPUT" | jq -r '.name')" >> $GITHUB_ENV
@@ -204,8 +207,11 @@ runs:
         ARTIFACT_TRAITS="${{ inputs.destination }},${{ inputs.configuration }}"
         echo "ARTIFACT_TRAITS=$ARTIFACT_TRAITS" >> $GITHUB_ENV
 
-        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json 2>&1) || (echo "$OUTPUT" && exit 1)
         if [ "$OUTPUT" ]; then
+          echo "=== RAW ROCK LIST OUTPUT (regular) ==="
+          echo "$OUTPUT"
+          echo "=== END RAW OUTPUT ==="
           echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
           echo "ARTIFACT_ID=$(echo "$OUTPUT" | jq -r '.id')" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=$(echo "$OUTPUT" | jq -r '.name')" >> $GITHUB_ENV
@@ -366,7 +372,10 @@ runs:
     - name: Download and Unpack IPA
       if: ${{ env.ARTIFACT_URL && inputs.destination == 'device' && inputs.re-sign == 'true' }}
       run: |
-        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        echo "=== RAW ROCK DOWNLOAD OUTPUT (IPA) ==="
+        echo "$DOWNLOAD_OUTPUT"
+        echo "=== END RAW OUTPUT ==="
         IPA_PATH=$(echo "$DOWNLOAD_OUTPUT" | jq -r '.path')
         echo "ARTIFACT_PATH=$IPA_PATH" >> $GITHUB_ENV
       shell: bash
@@ -374,7 +383,10 @@ runs:
     - name: Download and Unpack APP
       if: ${{ env.ARTIFACT_URL && inputs.destination == 'simulator' && inputs.re-sign == 'true' }}
       run: |
-        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        echo "=== RAW ROCK DOWNLOAD OUTPUT (APP) ==="
+        echo "$DOWNLOAD_OUTPUT"
+        echo "=== END RAW OUTPUT ==="
         APP_PATH=$(echo "$DOWNLOAD_OUTPUT" | jq -r '.path')
         APP_DIR=$(dirname "$APP_PATH")
         APP_BASENAME=$(basename "$APP_PATH")
@@ -422,10 +434,13 @@ runs:
     # Find artifact URL again before uploading, as other concurrent workflows could upload the same artifact
     - name: Find artifact URL again before uploading
       run: |
-        OUTPUT=$(npx rock remote-cache list --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache list --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$OUTPUT" && exit 1)
         if [ -z "$OUTPUT" ]; then
           echo "No artifact found"
         else
+          echo "=== RAW ROCK LIST OUTPUT (pre-upload check) ==="
+          echo "$OUTPUT"
+          echo "=== END RAW OUTPUT ==="
           echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
           echo "ARTIFACT_ID=$(echo "$OUTPUT" | jq -r '.id')" >> $GITHUB_ENV
         fi
@@ -446,14 +461,20 @@ runs:
     - name: Upload Artifact to Remote Cache for re-signed builds
       if: ${{ env.PROVIDER_NAME != 'GitHub' && inputs.re-sign == 'true' }}
       run: |
-        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path ${{ env.ARTIFACT_PATH }} --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path ${{ env.ARTIFACT_PATH }} --json 2>&1) || (echo "$OUTPUT" && exit 1)
+        echo "=== RAW ROCK UPLOAD OUTPUT (upload re-signed)==="
+        echo "$OUTPUT"
+        echo "=== END RAW OUTPUT ==="
         echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
       shell: bash
 
     - name: Upload Artifact to Remote Cache for regular builds
       if: ${{ env.PROVIDER_NAME != 'GitHub' && inputs.re-sign != 'true' && !env.ARTIFACT_URL }}
       run: |
-        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$OUTPUT" && exit 1)
+        echo "=== RAW ROCK UPLOAD OUTPUT (upload not re-signed)==="
+        echo "$OUTPUT"
+        echo "=== END RAW OUTPUT ==="
         echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
       shell: bash
 
@@ -462,7 +483,10 @@ runs:
     - name: Upload for Ad-hoc distribution
       if: ${{ env.PROVIDER_NAME != 'GitHub' && inputs.ad-hoc == 'true' }}
       run: |
-        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path ${{ env.ARTIFACT_PATH }} --json --ad-hoc) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path ${{ env.ARTIFACT_PATH }} --json --ad-hoc 2>&1) || (echo "$OUTPUT" && exit 1)
+        echo "=== RAW ROCK UPLOAD OUTPUT (upload adhoc)==="
+        echo "$OUTPUT"
+        echo "=== END RAW OUTPUT ==="
         echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
       shell: bash
 
