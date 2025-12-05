@@ -65,7 +65,7 @@ inputs:
 outputs:
   artifact-url:
     description: 'URL of the relevant iOS build artifact (could be cached)'
-    value: ${{ steps.upload-artifact-gh.outputs.artifact-url || steps.upload-artifact-other-resigned.outputs.artifact-url || steps.upload-artifact-other-regular.outputs.artifact-url || steps.upload-artifact-other-adhoc.outputs.artifact-url || env.ARTIFACT_URL  }}
+    value: ${{ steps.upload-artifact-gh.outputs.artifact-url || env.ARTIFACT_URL  }}
   artifact-id:
     description: 'ID of the relevant iOS build artifact (could be cached)'
     value: ${{ steps.upload-artifact-gh.outputs.artifact-id || env.ARTIFACT_ID }}
@@ -538,7 +538,7 @@ runs:
       uses: callstackincubator/ios/.github/actions/rock-post-build@v3
       with:
         title: iOS ${{ inputs.configuration }} ${{ inputs.destination == 'simulator' && 'APP for simulators' || 'IPA for physical devices' }}
-        artifact-url: ${{ steps.upload-artifact-gh.outputs.artifact-url || steps.upload-artifact-other-resigned.outputs.artifact-url || steps.upload-artifact-other-regular.outputs.artifact-url || steps.upload-artifact-other-adhoc.outputs.artifact-url || env.ARTIFACT_URL }}
+        artifact-url: ${{ steps.upload-artifact-gh.outputs.artifact-url || env.ARTIFACT_URL }}
         github-token: ${{ inputs.github-token }}
 
     - name: Debug - Log Action Outputs
@@ -553,6 +553,6 @@ runs:
         echo "steps.upload-artifact-other-adhoc.outputs.artifact-url: ${{ steps.upload-artifact-other-adhoc.outputs.artifact-url }}"
         echo ""
         echo "=== Final Output Values ==="
-        echo "artifact-url will be: ${{ steps.upload-artifact-gh.outputs.artifact-url || steps.upload-artifact-other-resigned.outputs.artifact-url || steps.upload-artifact-other-regular.outputs.artifact-url || steps.upload-artifact-other-adhoc.outputs.artifact-url || env.ARTIFACT_URL }}"
+        echo "artifact-url will be: ${{ steps.upload-artifact-gh.outputs.artifact-url || env.ARTIFACT_URL }}"
         echo "=== End Debug ==="
       shell: bash
