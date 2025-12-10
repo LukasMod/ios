@@ -65,10 +65,10 @@ inputs:
 outputs:
   artifact-url:
     description: 'URL of the relevant iOS build artifact (could be cached)'
-    value: ${{ steps.upload-artifact.outputs.artifact-url || env.ARTIFACT_URL }}
+    value: ${{ steps.upload-artifact-gh.outputs.artifact-url || env.ARTIFACT_URL  }}
   artifact-id:
     description: 'ID of the relevant iOS build artifact (could be cached)'
-    value: ${{ steps.upload-artifact.outputs.artifact-id || env.ARTIFACT_ID }}
+    value: ${{ steps.upload-artifact-gh.outputs.artifact-id || env.ARTIFACT_ID }}
 
 runs:
   using: 'composite'
@@ -190,8 +190,11 @@ runs:
         ARTIFACT_TRAITS="${{ inputs.destination }},${{ inputs.configuration }},${{ github.event.pull_request.number}}"
         echo "ARTIFACT_TRAITS=$ARTIFACT_TRAITS" >> $GITHUB_ENV
 
-        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json 2>&1) || (echo "$OUTPUT" && exit 1)
         if [ "$OUTPUT" ]; then
+          echo "=== RAW ROCK LIST OUTPUT (PR-related) ==="
+          echo "$OUTPUT"
+          echo "=== END RAW OUTPUT ==="
           echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
           echo "ARTIFACT_ID=$(echo "$OUTPUT" | jq -r '.id')" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=$(echo "$OUTPUT" | jq -r '.name')" >> $GITHUB_ENV
@@ -204,8 +207,11 @@ runs:
         ARTIFACT_TRAITS="${{ inputs.destination }},${{ inputs.configuration }}"
         echo "ARTIFACT_TRAITS=$ARTIFACT_TRAITS" >> $GITHUB_ENV
 
-        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache list -p ios --traits "${ARTIFACT_TRAITS}" --json 2>&1) || (echo "$OUTPUT" && exit 1)
         if [ "$OUTPUT" ]; then
+          echo "=== RAW ROCK LIST OUTPUT (regular) ==="
+          echo "$OUTPUT"
+          echo "=== END RAW OUTPUT ==="
           echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
           echo "ARTIFACT_ID=$(echo "$OUTPUT" | jq -r '.id')" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=$(echo "$OUTPUT" | jq -r '.name')" >> $GITHUB_ENV
@@ -348,11 +354,11 @@ runs:
       run: |
         if [ "${{ inputs.destination }}" == "device" ]; then
           IPA_PATH=$(find .rock/cache/ios/export -maxdepth 1 -name '*.ipa' -type f | head -1)
-          echo IPA_PATH $IPA_PATH
+          echo "IPA_PATH $IPA_PATH"
           echo "ARTIFACT_PATH=$IPA_PATH" >> $GITHUB_ENV
         else
           # Simulator build: needs to compress with tar, as GH actions drop execute file permission during packing to zip
-          APP_PATH=$(find $IOS_SOURCE_DIR/build -name '*.app' -type d | head -1 )
+          APP_PATH=$(find "$IOS_SOURCE_DIR/build" -name '*.app' -type d | head -1 )
           APP_DIR=$(dirname "$APP_PATH")
           APP_BASENAME=$(basename "$APP_PATH")
 
@@ -366,7 +372,10 @@ runs:
     - name: Download and Unpack IPA
       if: ${{ env.ARTIFACT_URL && inputs.destination == 'device' && inputs.re-sign == 'true' }}
       run: |
-        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        echo "=== RAW ROCK DOWNLOAD OUTPUT (IPA) ==="
+        echo "$DOWNLOAD_OUTPUT"
+        echo "=== END RAW OUTPUT ==="
         IPA_PATH=$(echo "$DOWNLOAD_OUTPUT" | jq -r '.path')
         echo "ARTIFACT_PATH=$IPA_PATH" >> $GITHUB_ENV
       shell: bash
@@ -374,7 +383,10 @@ runs:
     - name: Download and Unpack APP
       if: ${{ env.ARTIFACT_URL && inputs.destination == 'simulator' && inputs.re-sign == 'true' }}
       run: |
-        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        DOWNLOAD_OUTPUT=$(npx rock remote-cache download --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$DOWNLOAD_OUTPUT" && exit 1)
+        echo "=== RAW ROCK DOWNLOAD OUTPUT (APP) ==="
+        echo "$DOWNLOAD_OUTPUT"
+        echo "=== END RAW OUTPUT ==="
         APP_PATH=$(echo "$DOWNLOAD_OUTPUT" | jq -r '.path')
         APP_DIR=$(dirname "$APP_PATH")
         APP_BASENAME=$(basename "$APP_PATH")
@@ -422,10 +434,11 @@ runs:
     # Find artifact URL again before uploading, as other concurrent workflows could upload the same artifact
     - name: Find artifact URL again before uploading
       run: |
-        OUTPUT=$(npx rock remote-cache list --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$OUTPUT" && exit 1)
+        OUTPUT=$(npx rock remote-cache list --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$OUTPUT" && exit 1)
         if [ -z "$OUTPUT" ]; then
           echo "No artifact found"
         else
+          echo OUTPUT "$OUTPUT"
           echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
           echo "ARTIFACT_ID=$(echo "$OUTPUT" | jq -r '.id')" >> $GITHUB_ENV
         fi
@@ -433,7 +446,7 @@ runs:
 
     # Special case for GitHub, as it doesn't support uploading through the API
     - name: Upload Artifact to GitHub
-      id: upload-artifact
+      id: upload-artifact-gh
       if: ${{ env.PROVIDER_NAME == 'GitHub' && (!env.ARTIFACT_URL || inputs.re-sign == 'true') }}
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
@@ -444,26 +457,38 @@ runs:
     # For re-signed builds, the ARTIFACT_NAME may contain PR-number, while Rock will save the artifact without PR trait in its cache.
     # We need to upload the artifact with the PR-number in the name, that's why we use --binary-path with appropriate ARTIFACT_PATH that accounts for it.
     - name: Upload Artifact to Remote Cache for re-signed builds
+      id: upload-artifact-other-resigned
       if: ${{ env.PROVIDER_NAME != 'GitHub' && inputs.re-sign == 'true' }}
       run: |
-        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path ${{ env.ARTIFACT_PATH }} --json) || (echo "$OUTPUT" && exit 1)
-        echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
+        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path "${{ env.ARTIFACT_PATH }}" --json 2>&1) || (echo "$OUTPUT" && exit 1)
+        echo OUTPUT "$OUTPUT"
+        ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')
+        echo "ARTIFACT_URL=$ARTIFACT_URL" >> $GITHUB_ENV
+        echo "artifact-url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Upload Artifact to Remote Cache for regular builds
+      id: upload-artifact-other-regular
       if: ${{ env.PROVIDER_NAME != 'GitHub' && inputs.re-sign != 'true' && !env.ARTIFACT_URL }}
       run: |
-        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --json) || (echo "$OUTPUT" && exit 1)
-        echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
+        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --json 2>&1) || (echo "$OUTPUT" && exit 1)
+        echo OUTPUT "$OUTPUT"
+        ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')
+        echo "ARTIFACT_URL=$ARTIFACT_URL" >> $GITHUB_ENV
+        echo "artifact-url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
       shell: bash
 
     # For ad-hoc builds, the ARTIFACT_NAME may contain PR-number, while Rock will save the artifact without PR trait in its cache.
     # We need to upload the artifact with the PR-number in the name, that's why we use --binary-path with appropriate ARTIFACT_PATH that accounts for it.
     - name: Upload for Ad-hoc distribution
+      id: upload-artifact-other-adhoc
       if: ${{ env.PROVIDER_NAME != 'GitHub' && inputs.ad-hoc == 'true' }}
       run: |
-        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path ${{ env.ARTIFACT_PATH }} --json --ad-hoc) || (echo "$OUTPUT" && exit 1)
-        echo "ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')" >> $GITHUB_ENV
+        OUTPUT=$(npx rock remote-cache upload --name ${{ env.ARTIFACT_NAME }} --binary-path "${{ env.ARTIFACT_PATH }}" --json --ad-hoc 2>&1) || (echo "$OUTPUT" && exit 1)
+        echo OUTPUT "$OUTPUT"
+        ARTIFACT_URL=$(echo "$OUTPUT" | jq -r '.url')
+        echo "ARTIFACT_URL=$ARTIFACT_URL" >> $GITHUB_ENV
+        echo "artifact-url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Delete Old Re-Signed Artifacts
@@ -513,5 +538,21 @@ runs:
       uses: callstackincubator/ios/.github/actions/rock-post-build@v3
       with:
         title: iOS ${{ inputs.configuration }} ${{ inputs.destination == 'simulator' && 'APP for simulators' || 'IPA for physical devices' }}
-        artifact-url: ${{ steps.upload-artifact.outputs.artifact-url || env.ARTIFACT_URL }}
+        artifact-url: ${{ steps.upload-artifact-gh.outputs.artifact-url || env.ARTIFACT_URL }}
         github-token: ${{ inputs.github-token }}
+
+    - name: Debug - Log Action Outputs
+      run: |
+        echo "=== All Relevant Environment Variables ==="
+        echo "env.ARTIFACT_URL: $ARTIFACT_URL"
+        echo ""
+        echo "=== Step Outputs ==="
+        echo "steps.upload-artifact-gh.outputs.artifact-url: ${{ steps.upload-artifact-gh.outputs.artifact-url }}"
+        echo "steps.upload-artifact-other-resigned.outputs.artifact-url: ${{ steps.upload-artifact-other-resigned.outputs.artifact-url }}"
+        echo "steps.upload-artifact-other-regular.outputs.artifact-url: ${{ steps.upload-artifact-other-regular.outputs.artifact-url }}"
+        echo "steps.upload-artifact-other-adhoc.outputs.artifact-url: ${{ steps.upload-artifact-other-adhoc.outputs.artifact-url }}"
+        echo ""
+        echo "=== Final Output Values ==="
+        echo "artifact-url will be: ${{ steps.upload-artifact-gh.outputs.artifact-url || env.ARTIFACT_URL }}"
+        echo "=== End Debug ==="
+      shell: bash
